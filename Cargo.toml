@@ -6,3 +6,6 @@ edition = "2021"
 [features]
 default = ["global"]
 global = []
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docs_rs"]

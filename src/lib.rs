@@ -1,3 +1,7 @@
+#![cfg_attr(docs_rs, feature(doc_auto_cfg))]
+#![warn(missing_docs)]
+#![doc = include_str!("../README.md")]
+
 pub mod sync;
 
 use std::cmp::Ordering;
@@ -9,17 +13,45 @@ use std::hash::BuildHasher;
 use std::iter::{Sum, Product, FusedIterator};
 use std::rc::Rc;
 
+/**
+ * The type of strings that have been interned.
+ * 
+ * Currently just a type alias, but I might change that if I find a good reason.
+ */
 pub type InternedStr = Rc<str>;
 
+/**
+ * An interner will keep track of strings and ensure there is only one allocation for any given string contents.
+ * 
+ * For example:
+ * ```rust
+ * # use str_intern::{Interner, InternedStr};
+ * let mut interner = Interner::new();
+ * let foo0 = interner.intern(String::from("foo"));
+ * let foo1 = interner.intern(String::from("foo"));
+ * assert!(InternedStr::ptr_eq(&foo0, &foo1));
+ * ```
+ * Because `foo0` and `foo1` have the same contents, they become a single allocation.
+ * 
+ * Interned strings are immutable, which means that you must construct the finished string before interning it.
+ * 
+ * This is useful if you have many instances of the same strings
+ * (e.g., if 200 different structs contain the string `"foo"`, an interner allows there to be 200 pointers to one allocation, rather than 200 different allocations).
+ * 
+ * This `Interner` is not thread-safe (which is to say, it is implements neither [`Send`] nor [`Sync`]). For a thread-safe variant, see the [`sync`](crate::sync) module.
+ */
 #[repr(transparent)]
 pub struct Interner<S = RandomState> {
   
-  strings: HashSet<Rc<str>, S>
+  strings: HashSet<InternedStr, S>
   
 }
 
 impl Interner {
   
+  /**
+   * Constructs a new `Interner`.
+   */
   pub fn new() -> Self {
     Self::from_set(HashSet::new())
   }
@@ -28,37 +60,61 @@ impl Interner {
 
 impl<S> Interner<S> {
   
+  /**
+   * Constructs a new `Interner` with the given hasher. See [`BuildHasher`] for more information.
+   */
   pub fn with_hasher(hasher: S) -> Self {
     Self::from_set(HashSet::with_hasher(hasher))
   }
   
-  pub fn from_set(strings: HashSet<Rc<str>, S>) -> Self {
+  /**
+   * Construct a new `Interner` with the given set's contents already interned.
+   * The new `Interner` will also use the given set's hasher.
+   */
+  pub fn from_set(strings: HashSet<InternedStr, S>) -> Self {
     Self { strings }
   }
   
-  pub fn into_set(self) -> HashSet<Rc<str>, S> {
+  /**
+   * Consume this `Interner` and return a set containing all of strings that were interned.
+   * The returned set also uses the same hasher.
+   */
+  pub fn into_set(self) -> HashSet<InternedStr, S> {
     self.strings
   }
   
-  pub fn intern(&mut self, string: impl AsRef<str>) -> Rc<str> where S: BuildHasher {
+  /**
+   * Removes all of the interned strings.
+   */
+  pub fn clear(&mut self) {
+    self.strings.clear();
+  }
+  
+  /**
+   * An iterator over all of the currently interned strings.
+   */
+  pub fn iter(&self) -> Iter {
+    Iter::new(self.strings.iter())
+  }
+  
+}
+
+impl<S: BuildHasher> Interner<S> {
+  
+  /**
+   * Saves the given string if it is not already saved, and returns the saved string.
+   */
+  pub fn intern(&mut self, string: impl AsRef<str>) -> InternedStr {
     // Sorrow abounds, for behold: HashSet::get_or_insert_with doesn't exist yet.
     let string = string.as_ref();
     match self.strings.get(string) {
       Some(string) => string.clone(),
       None => {
-        let string = Rc::from(string);
-        self.strings.insert(Rc::clone(&string));
+        let string = InternedStr::from(string);
+        self.strings.insert(InternedStr::clone(&string));
         string
       }
     }
-  }
-  
-  pub fn clear(&mut self) {
-    self.strings.clear();
-  }
-  
-  pub fn iter(&self) -> Iter {
-    Iter::new(self.strings.iter())
   }
   
 }
@@ -107,7 +163,7 @@ impl<S: Default> Default for Interner<S> {
 
 impl<S> IntoIterator for Interner<S> {
   
-  type Item = Rc<str>;
+  type Item = InternedStr;
   type IntoIter = IntoIter;
   
   fn into_iter(self) -> IntoIter {
@@ -118,7 +174,7 @@ impl<S> IntoIterator for Interner<S> {
 
 impl<'a, S> IntoIterator for &'a Interner<S> {
   
-  type Item = &'a Rc<str>;
+  type Item = &'a InternedStr;
   type IntoIter = Iter<'a>;
   
   fn into_iter(self) -> Iter<'a> {
@@ -127,7 +183,7 @@ impl<'a, S> IntoIterator for &'a Interner<S> {
   
 }
 
-impl<A, S> FromIterator<A> for Interner<S> where HashSet<Rc<str>, S>: FromIterator<A> {
+impl<A, S> FromIterator<A> for Interner<S> where HashSet<InternedStr, S>: FromIterator<A> {
   
   fn from_iter<T: IntoIterator<Item = A>>(iter: T) -> Self {
     Self::from_set(HashSet::from_iter(iter))
@@ -135,17 +191,22 @@ impl<A, S> FromIterator<A> for Interner<S> where HashSet<Rc<str>, S>: FromIterat
   
 }
 
+/**
+ * An iterator over the strings in an `Interner`.
+ * 
+ * This `struct` is created by the [`iter`](Interner::iter) method on `Interner`.
+ */
 #[repr(transparent)]
 #[derive(Clone, Debug)]
 pub struct Iter<'a> {
   
-  iter: SetIter<'a, Rc<str>>
+  iter: SetIter<'a, InternedStr>
   
 }
 
 impl<'a> Iter<'a> {
   
-  fn new(iter: SetIter<'a, Rc<str>>) -> Self {
+  fn new(iter: SetIter<'a, InternedStr>) -> Self {
     Self { iter }
   }
   
@@ -153,7 +214,7 @@ impl<'a> Iter<'a> {
 
 impl<'a> Iterator for Iter<'a> {
   
-  type Item =  &'a Rc<str>;
+  type Item =  &'a InternedStr;
   
   fn next(&mut self) -> Option<Self::Item> {
     self.iter.next()
@@ -291,17 +352,23 @@ impl<'a> ExactSizeIterator for Iter<'a> {
 
 impl<'a> FusedIterator for Iter<'a> {}
 
+/**
+ * An owning iterator over the strings that were in an `Interner`.
+ * 
+ * This `struct` is created by the [`into_iter`](IntoIterator::into_iter) method on [`Interner`]
+ * (provided by the [`IntoIterator`] trait).
+ */
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct IntoIter {
   
-  iter: SetIntoIter<Rc<str>>
+  iter: SetIntoIter<InternedStr>
   
 }
 
 impl IntoIter {
   
-  fn new(iter: SetIntoIter<Rc<str>>) -> Self {
+  fn new(iter: SetIntoIter<InternedStr>) -> Self {
     Self { iter }
   }
   
@@ -309,7 +376,7 @@ impl IntoIter {
 
 impl Iterator for IntoIter {
   
-  type Item = Rc<str>;
+  type Item = InternedStr;
   
   fn next(&mut self) -> Option<Self::Item> {
     self.iter.next()
