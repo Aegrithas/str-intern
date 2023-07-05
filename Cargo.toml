@@ -2,6 +2,12 @@
 name = "str-intern"
 version = "0.0.1"
 edition = "2021"
+authors = ["Aegrithas"]
+description = "A simple string interner"
+license = "MIT"
+repository = "https://github.com/Aegrithas/str-intern"
+keywords = ["interner", "intern", "str", "string"]
+categories = ["memory-management"]
 
 [features]
 default = ["global"]
