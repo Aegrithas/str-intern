@@ -38,7 +38,7 @@ pub type InternedStr = Rc<str>;
  * This is useful if you have many instances of the same strings
  * (e.g., if 200 different structs contain the string `"foo"`, an interner allows there to be 200 pointers to one allocation, rather than 200 different allocations).
  * 
- * This `Interner` is not thread-safe (which is to say, it is implements neither [`Send`] nor [`Sync`]). For a thread-safe variant, see the [`sync`](crate::sync) module.
+ * This `Interner` is not thread-safe (which is to say, it is implements neither [`Send`] nor [`Sync`]). For a thread-safe variant, see the [`sync`] module.
  */
 #[repr(transparent)]
 pub struct Interner<S = RandomState> {
@@ -102,7 +102,7 @@ impl<S> Interner<S> {
 impl<S: BuildHasher> Interner<S> {
   
   /**
-   * Saves the given string if it is not already saved, and returns the saved string.
+   * Saves the given string if it is not already saved, and returns a reference the saved allocation.
    */
   pub fn intern(&mut self, string: impl AsRef<str>) -> InternedStr {
     // Sorrow abounds, for behold: HashSet::get_or_insert_with doesn't exist yet.
@@ -115,6 +115,20 @@ impl<S: BuildHasher> Interner<S> {
         string
       }
     }
+  }
+  
+  /**
+   * Returns whether the given string has already been saved.
+   */
+  pub fn contains(&self, string: impl AsRef<str>) -> bool {
+    self.strings.contains(string.as_ref())
+  }
+  
+  /**
+   * If the given string has already been saved, returns a reference to the saved allocation, or `None` otherwise.
+   */
+  pub fn get(&self, string: impl AsRef<str>) -> Option<InternedStr> {
+    self.strings.get(string.as_ref()).cloned()
   }
   
 }

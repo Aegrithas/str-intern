@@ -127,7 +127,7 @@ impl<S> Interner<S> {
 impl<S: BuildHasher> Interner<S> {
   
   /**
-   * Locks this `Interner`, saves the given string if it is not already saved, and returns the saved string, or blocks until it is able to do so.
+   * Locks this `Interner`, saves the given string if it is not already saved, and returns a reference to the saved allocation, or blocks until it is able to do so.
    * 
    * `interner.intern(string)` is equivalent to `interner.lock().intern(string)`.
    * (See [`LockedInterner::intern`].)
@@ -137,7 +137,21 @@ impl<S: BuildHasher> Interner<S> {
    */
   pub fn intern(&self, string: impl AsRef<str>) -> InternedStr where S: BuildHasher {
     self.lock().intern(string)
-  } 
+  }
+  
+  /**
+   * Returns whether the given string has already been saved, or blocks until it is able to do so.
+   */
+  pub fn contains(&self, string: impl AsRef<str>) -> bool {
+    self.lock().contains(string)
+  }
+  
+  /**
+   * If the given string has already been saved, returns a reference to the saved allocation, or `None` otherwise, or blocks until it is able to do so.
+   */
+  pub fn get(&self, string: impl AsRef<str>) -> Option<InternedStr> {
+    self.lock().get(string)
+  }
   
 }
 
@@ -237,7 +251,7 @@ impl<'a, S> LockedInterner<'a, S> {
 impl<'a, S: BuildHasher> LockedInterner<'a, S> {
   
   /**
-   * Saves the given string if it is not already saved, and returns the saved string.
+   * Saves the given string if it is not already saved, and returns a reference to the saved allocation.
    */
   pub fn intern(&mut self, string: impl AsRef<str>) -> InternedStr {
     // Sorrow abounds, for behold: HashSet::get_or_insert_with doesn't exist yet.
@@ -245,11 +259,25 @@ impl<'a, S: BuildHasher> LockedInterner<'a, S> {
     match self.strings.get(string) {
       Some(string) => string.clone(),
       None => {
-        let string = Arc::from(string);
-        self.strings.insert(Arc::clone(&string));
+        let string = InternedStr::from(string);
+        self.strings.insert(InternedStr::clone(&string));
         string
       }
     }
+  }
+  
+  /**
+   * Returns whether the given string has already been saved.
+   */
+  pub fn contains(&self, string: impl AsRef<str>) -> bool {
+    self.strings.contains(string.as_ref())
+  }
+  
+  /**
+   * If the given string has already been saved, returns a reference to the saved allocation, or `None` otherwise.
+   */
+  pub fn get(&self, string: impl AsRef<str>) -> Option<InternedStr> {
+    self.strings.get(string.as_ref()).cloned()
   }
   
 }
@@ -286,7 +314,6 @@ impl<'a, 'b, S> IntoIterator for &'b LockedInterner<'a, S> {
   }
   
 }
-
 
 /**
  * An iterator over the strings in a `LockedInterner`.
